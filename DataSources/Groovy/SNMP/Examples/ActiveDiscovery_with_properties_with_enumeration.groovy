@@ -88,7 +88,7 @@ propstoget = [
 hostname = hostProps.get('system.hostname')
 output = [:] //map to contain the instances (one entry per instance, one entry per line output)
 data = Snmp.walkAsMap(hostname, baseOID, null) //grab the data via snmp
-aliases = Snmp.walkAsMap(hostname, ".1.3.6.1.2.1.31.1.1.1",null) //grab the aliases (that live in a different branch of the MIB)
+if(enhanceInterfaceData){aliases = Snmp.walkAsMap(hostname, ".1.3.6.1.2.1.31.1.1.1",null)} //grab the aliases (that live in a different branch of the MIB)
 data.each { key, val -> //loop through the results looking for the aliasOID
   if (key.matches(~/${aliasOID}(\.\d*)+/)) { //if the current line is in the aliasOID,
     wildalias = key.tokenize(".").tail().join(".")
