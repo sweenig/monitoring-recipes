@@ -6,7 +6,7 @@
  * functional with other mechanisms already built.
  ******************************************************************************/
 import com.santaba.agent.groovyapi.snmp.Snmp
-
+enhanceInterfaceData = true //set this to false to omit the parts of this script that are specific to interface polling (you'll still need to )
 //parent OID that contains the wildvalue, wildalias, and properties. Usually has the name SomethingSomethingEntry in the MIB.
 baseOID = ".1.3.6.1.2.1.2.2.1"
 
@@ -18,7 +18,7 @@ aliasOID = "2"
  *     The first is the property name as it will appear in LM properties
  *     The second is a mapping of enumerated values that can be polled from the MIB
  *       mapped to the corresponding meaning.
- * Make sure the keys in the second element map are strings.
+ * Make sure the keys in both the parent map and in the second element map are strings.
  * Also make sure that properties that do not have an enumeration have a null map
  * as the second element.
  ******************************************************************************/
@@ -29,18 +29,18 @@ propstoget = [
    The resulting values would be checked against the map. If a match is found, the word is returned. If no match is found, the original value is returned.
    The returned values are then stored as properties with the names "ifAdminStatus" and "ifOperStatus".
    ******************************************************************************/
-  7: ["ifAdminStatus",        ["1":"up","2":"down","3":"testing"]                                                                                 ],
-  8: ["ifOperStatus",         ["1":"up","2":"down","3":"testing","4":"unknown","5":"dormant","6":"notPresent","7":"lowerLayerDown"]               ],
+  "7": ["ifAdminStatus",        ["1":"up","2":"down","3":"testing"]                                                                                 ],
+  "8": ["ifOperStatus",         ["1":"up","2":"down","3":"testing","4":"unknown","5":"dormant","6":"notPresent","7":"lowerLayerDown"]               ],
   /*******************************************************************************
    These are shown here as examples of OIDs that are NOT enumerated in the MIB.
    The OIDs "4" and "6" would be appended to the baseOID and polled via SNMP as part of Auto Discovery.
    The resulting values would be checked against the map. Since no match will be found (it's an empty map), the original values are returned.
    The returned values are then stored as properties with the names "ifMtu" and "ifPhysAddress".
    ******************************************************************************/
-  4: ["ifMtu",                [:]                                                                                                                 ],
-  6: ["ifPhysAddress",        [:]                                                                                                                 ],
+  //"4": ["ifMtu",                [:]                                                                                                                 ],
   //An alternative of the MTU property could look like this:
-  4: ["ifMtu",                [:]                                                                                                                 ],
+  "4": ["ifMtu",                ["1500":"Default (1500)"]                                                                                                                 ],
+  "6": ["ifPhysAddress",        [:]                                                                                                                 ],
   /*******************************************************************************
    This is an example of an OID that is NOT enumerated in the MIB, but has specific names for common values.
    The OID "5" would be appended to the baseOID and polled via SNMP as part of Auto Discovery.
@@ -48,7 +48,7 @@ propstoget = [
    If no match is found (i.e. it's an odd speed or just one that hasn't been added here), the original value is returned.
    The returned value is then stored as a property with the name "ifSpeed".
    ******************************************************************************/
-  5: ["ifSpeed",              ["40000000000":"40 Gbps","10000000000":"10 Gbps","1000000000":"1 Gbps","100000000":"100 Mbps","10000000":"10 Mbps"] ],
+  "5": ["ifSpeed",              ["40000000000":"40 Gbps","10000000000":"10 Gbps","1000000000":"1 Gbps","100000000":"100 Mbps","10000000":"10 Mbps"] ],
   /*******************************************************************************
    This is an example of an OID that is enumerated in the MIB. In fact, it has many enumerated values.
    The OID "3" would be appended to the baseOID and polled via SNMP as part of Auto Discovery.
@@ -56,7 +56,7 @@ propstoget = [
    If no match is found (i.e. it's a new ifType or just one that hasn't been added here), the original value is returned.
    The returned value is then stored as a property with the names "ifType".
    ******************************************************************************/
-  3: ["ifType",
+  "3": ["ifType",
         ["1":"other","2":"regular1822","3":"hdh1822","4":"ddnX25","5":"rfc877x25","6":"ethernetCsmacd","7":"iso88023Csmacd","8":"iso88024TokenBus","9":"iso88025TokenRing",
         "10":"iso88026Man","11":"starLan","12":"proteon10Mbit","13":"proteon80Mbit","14":"hyperchannel","15":"fddi","16":"lapb","17":"sdlc","18":"ds1","19":"e1",
         "20":"basicISDN","21":"primaryISDN","22":"propPointToPointSerial","23":"ppp","24":"softwareLoopback","25":"eon","26":"ethernet3Mbit","27":"nsip","28":"slip","29":"ultra",
@@ -86,33 +86,32 @@ propstoget = [
 ]
 //You shouldn't have to modify anything after this line
 hostname = hostProps.get('system.hostname')
-Snmp.walkAsMap(hostname,baseOID + "." + aliasOID,null).each { instance -> // Loop through the wildvalue and wildalias of each instance
-  props = []
-  propstoget.each {key, val -> //loop through each property in the map above
-    propresult = URLEncoder.encode(Snmp.get(hostname, baseOID + "." + key + "." + instance.key)) //poll for the value of the property
-    if(val[1].containsKey(propresult)) { propresult = val[1][propresult] } //if the polled value has a corresponding enumerated value, replace the value with the word
-    props << val[0] + "=" + propresult // put the property result into a list (we'll join it all together later)
+output = [:] //map to contain the instances (one entry per instance, one entry per line output)
+data = Snmp.walkAsMap(hostname, baseOID, null) //grab the data via snmp
+aliases = Snmp.walkAsMap(hostname, ".1.3.6.1.2.1.31.1.1.1",null) //grab the aliases (that live in a different branch of the MIB)
+data.each { key, val -> //loop through the results looking for the aliasOID
+  if (key.matches(~/${aliasOID}(\.\d*)+/)) { //if the current line is in the aliasOID,
+    wildalias = key.tokenize(".").tail().join(".")
+    if(enhanceInterfaceData){
+      activity_indicator = Long.parseLong(aliases["6."+wildalias] ?: "0") + Long.parseLong(aliases["10."+wildalias] ?: "0") + Long.parseLong(data["10."+wildalias] ?: "0") + Long.parseLong(data["16."+wildalias] ?: "0")
+      output[wildalias] = ["description":val ?: "NODESCR", "alias": aliases["18." + wildalias], "ifName": aliases["1." + wildalias], "activityindicator": activity_indicator] //create an item in the map for this instance, add the alias and description
+    } else {
+      output[wildalias] = ["alias":val ?: "NODESCR"] //create an item in the map for this instance, add the alias and description
+    }
   }
-  //output the instance wildvalue, instance wildalias, instance description (wildalias), and the properties list generated above
-  println("${instance.key}##${instance.value}##${instance.value}####${props.join('&')}")
+}
+output.each {i_key, i_val -> //only search for properties for valid, discovered instances
+  props = [] //empty list to contain the properties
+  data.each {d_key, d_val -> //inspect each row in the data to see if it's for this instance
+    oidstem = d_key.tokenize(".")[0]//strip the last element off the OID
+    if (d_key.tokenize(".").tail().join(".") == i_key && propstoget.containsKey(oidstem)) { //if it's for this instance
+      props += "${propstoget[oidstem][0]}=${propstoget[oidstem][1][d_val] ?: URLEncoder.encode(d_val)}" //add it to the properties (replace with enumeration if possible)
+    }
+  }
+  if(enhanceInterfaceData){
+    println("${i_key}##${i_val['ifName']}##${i_val['alias'] ?: i_val['description']} (${i_key})####description=${i_val['description']}&ifalias=${i_val['alias']}&ifname=${i_val['ifName']}&activityindicator=${i_val['activityindicator']}&" + props.join('&'))
+  } else {
+    println("${i_key}##${i_key}##${i_val['alias']}####" + props.join('&'))
+  }
 }
 return(0)
-
-
-/*******************************************************************************
-EXAMPLE OUTPUT
-********************************************************************************
-13## CPU Interface for Slot: 5 Port: 1## CPU Interface for Slot: 5 Port: 1####ifAdminStatus=up&ifOperStatus=up&ifMtu=1500&ifPhysAddress=c4%3A04%3A15%3Ab3%3Ad4%3Ad7&ifSpeed=0&ifType=other
-14## Link Aggregate## Link Aggregate####ifAdminStatus=up&ifOperStatus=down&ifMtu=1500&ifPhysAddress=c4%3A04%3A15%3Ab3%3Ad4%3Ad9&ifSpeed=0&ifType=ieee8023adLag
-15## Link Aggregate## Link Aggregate####ifAdminStatus=up&ifOperStatus=down&ifMtu=1500&ifPhysAddress=c4%3A04%3A15%3Ab3%3Ad4%3Ad9&ifSpeed=0&ifType=ieee8023adLag
-16## Link Aggregate## Link Aggregate####ifAdminStatus=up&ifOperStatus=down&ifMtu=1500&ifPhysAddress=c4%3A04%3A15%3Ab3%3Ad4%3Ad9&ifSpeed=0&ifType=ieee8023adLag
-17## Link Aggregate## Link Aggregate####ifAdminStatus=up&ifOperStatus=down&ifMtu=1500&ifPhysAddress=c4%3A04%3A15%3Ab3%3Ad4%3Ad9&ifSpeed=0&ifType=ieee8023adLag
-1##Slot: 0 Port: 1 Gigabit - Level##Slot: 0 Port: 1 Gigabit - Level####ifAdminStatus=up&ifOperStatus=down&ifMtu=1500&ifPhysAddress=c4%3A04%3A15%3Ab3%3Ad4%3Ad9&ifSpeed=0&ifType=ethernetCsmacd
-2##Slot: 0 Port: 2 Gigabit - Level##Slot: 0 Port: 2 Gigabit - Level####ifAdminStatus=up&ifOperStatus=up&ifMtu=1500&ifPhysAddress=c4%3A04%3A15%3Ab3%3Ad4%3Ad9&ifSpeed=1 Gbps&ifType=ethernetCsmacd
-3##Slot: 0 Port: 3 Gigabit - Level##Slot: 0 Port: 3 Gigabit - Level####ifAdminStatus=up&ifOperStatus=up&ifMtu=1500&ifPhysAddress=c4%3A04%3A15%3Ab3%3Ad4%3Ad9&ifSpeed=100 Mbps&ifType=ethernetCsmacd
-4##Slot: 0 Port: 4 Gigabit - Level##Slot: 0 Port: 4 Gigabit - Level####ifAdminStatus=up&ifOperStatus=down&ifMtu=1500&ifPhysAddress=c4%3A04%3A15%3Ab3%3Ad4%3Ad9&ifSpeed=0&ifType=ethernetCsmacd
-5##Slot: 0 Port: 5 Gigabit - Level##Slot: 0 Port: 5 Gigabit - Level####ifAdminStatus=up&ifOperStatus=down&ifMtu=1500&ifPhysAddress=c4%3A04%3A15%3Ab3%3Ad4%3Ad9&ifSpeed=0&ifType=ethernetCsmacd
-6##Slot: 0 Port: 6 Gigabit - Level##Slot: 0 Port: 6 Gigabit - Level####ifAdminStatus=up&ifOperStatus=down&ifMtu=1500&ifPhysAddress=c4%3A04%3A15%3Ab3%3Ad4%3Ad9&ifSpeed=0&ifType=ethernetCsmacd
-7##Slot: 0 Port: 7 Gigabit - Level##Slot: 0 Port: 7 Gigabit - Level####ifAdminStatus=up&ifOperStatus=down&ifMtu=1500&ifPhysAddress=c4%3A04%3A15%3Ab3%3Ad4%3Ad9&ifSpeed=0&ifType=ethernetCsmacd
-8##Slot: 0 Port: 8 Gigabit - Level##Slot: 0 Port: 8 Gigabit - Level####ifAdminStatus=up&ifOperStatus=up&ifMtu=1500&ifPhysAddress=c4%3A04%3A15%3Ab3%3Ad4%3Ad9&ifSpeed=1 Gbps&ifType=ethernetCsmacd
-******************************************************************************/
