@@ -8,6 +8,7 @@ def props = hostProps.toProperties()
 int timeout = 10000 // 10 sec timeout.
 
 def snmpMapToTable(snmpmap, int wildvalueTerms = 1) {
+    //println("Raw result of snmpwalk of ${Oid}:\n${snmpmap}\n${"=".multiply(80)}")
     rows = [:]
     snmpmap.each {k,v ->
         splits = k.tokenize(".")
@@ -19,10 +20,10 @@ def snmpMapToTable(snmpmap, int wildvalueTerms = 1) {
     return rows
 }
 
-def sortSnmpWalkTable(table) {
+def sortSnmpWalkTable(table, int wildvalueTerms = 1) {
     if (wildvalueTerms > 2) {
         println("More than 2 terms in the wildvalue are not supported.");
-        return table.keySet().sort();
+        return [];
     }
     if (wildvalueTerms == 1) {
         rowsWildvalueSorted = table.keySet().collect { it.toInteger() }.sort()
@@ -54,20 +55,18 @@ def pprintSnmpWalkTable(table) {
     }
 }
 
-def flatprintSnmpWalkTable(table) {
+def flattenSnmpWalkTable(table) {
+    flat = []
     sortSnmpWalkTable(table).each { k ->
         data = table[k.toString()].each {key, val ->
-            println([k,key, val])
+            flat << [k,key, val]
         }
     }
+    return flat
 }
-wildvalueTerms = 1
-walkResult = Snmp.walkAsMap(host, "1.3.6.1.2.1.2.2.1", props, timeout)
-ifEntryRaw = snmpMapToTable(walkResult, wildvalueTerms)
-walkResult = Snmp.walkAsMap(host, "1.3.6.1.2.1.31.1.1.1", props, timeout)
-ifXEntryRaw = snmpMapToTable(walkResult, wildvalueTerms)
-//pprintSnmpWalkTable(ifEntryRaw)
-//pprintSnmpWalkTable(ifXEntryRaw)
+
+ifEntryRaw = snmpMapToTable(Snmp.walkAsMap(host, "1.3.6.1.2.1.2.2.1", props, timeout))
+ifXEntryRaw = snmpMapToTable(Snmp.walkAsMap(host, "1.3.6.1.2.1.31.1.1.1", props, timeout))
 ifEntryRaw.each {wildvalue, data ->
     println("Interface ${wildvalue}:\n\tifAlias: ${ifXEntryRaw[wildvalue]["1"]}\n\tifDescr: ${data["2"]}\n\tifType: ${data["3"]}")
 }
