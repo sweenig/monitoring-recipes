@@ -68,6 +68,10 @@ def flattenSnmpWalkTable(table) {
 ifEntryRaw = snmpMapToTable(Snmp.walkAsMap(host, "1.3.6.1.2.1.2.2.1", props, timeout))
 ifXEntryRaw = snmpMapToTable(Snmp.walkAsMap(host, "1.3.6.1.2.1.31.1.1.1", props, timeout))
 ifEntryRaw.each {wildvalue, data ->
-    println("Interface ${wildvalue}:\n\tifAlias: ${ifXEntryRaw[wildvalue]["1"]}\n\tifDescr: ${data["2"]}\n\tifType: ${data["3"]}")
+    println("""Interface ${wildvalue}:
+	ifAlias: ${ifXEntryRaw[wildvalue]["1"]}
+	ifDescr: ${data["2"]}
+	ifType: ${data["3"]}
+""")
 }
 return 0
