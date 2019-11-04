@@ -77,13 +77,13 @@ def flattenSnmpWalkTable(table) {
 
 def snmpWalkToCsv(table) {
     colHeaders = table[table.keySet()[0]].keySet().collect{it.toInteger()}.sort()
-    output = "idx," + colHeaders.join(",")
+    output = "idx," + colHeaders.join(",") + "\n"
     table.each{k,v ->
         line=[k]
         colHeaders.each{ col ->
-          line += v[col.toString()]
+          line += "\"" + v[col.toString()] + "\""
         }
-        output += line.join(",")
+        output += line.join(",") + "\n"
     }
     return output
 }
