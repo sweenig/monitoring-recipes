@@ -6,13 +6,14 @@
  * functional with other mechanisms already built.
  ******************************************************************************/
 import com.santaba.agent.groovyapi.snmp.Snmp
-enhanceInterfaceData = true //set this to false to omit the parts of this script that are specific to interface polling (you'll still need to )
+
 //parent OID that contains the wildvalue, wildalias, and properties. Usually has the name SomethingSomethingEntry in the MIB.
 baseOID = ".1.3.6.1.2.1.2.2.1"
 
-timeout = 15000
 //leaf OID that contains the wildalias, we'll walk this to get the wildvalue and wildalias
 aliasOID = "2"
+descrOID = "2" //use the value in leaf #2 for the description
+//descrOID = "" //don't set a description
 
 /*******************************************************************************
  * This map contains two elements per entry:
@@ -87,32 +88,26 @@ propstoget = [
 ]
 //You shouldn't have to modify anything after this line
 hostname = hostProps.get('system.hostname')
-output = [:] //map to contain the instances (one entry per instance, one entry per line output)
+wildvalues = [] //map to contain the instances (one entry per instance, one entry per line output)
 data = Snmp.walkAsMap(hostname, baseOID, null) //grab the data via snmp
-if(enhanceInterfaceData){aliases = Snmp.walkAsMap(hostname, ".1.3.6.1.2.1.31.1.1.1", null, timeout)} //grab the aliases (that live in a different branch of the MIB)
-data.each { key, val -> //loop through the results looking for the aliasOID
-  if (key.matches(~/${aliasOID}(\.\d*)+/)) { //if the current line is in the aliasOID,
-    wildalias = key.tokenize(".").tail().join(".")
-    if(enhanceInterfaceData){
-      activity_indicator = Long.parseLong(aliases["6."+wildalias] ?: "0") + Long.parseLong(aliases["10."+wildalias] ?: "0") + Long.parseLong(data["10."+wildalias] ?: "0") + Long.parseLong(data["16."+wildalias] ?: "0")
-      output[wildalias] = ["description":val ?: "NODESCR", "alias": aliases["18." + wildalias], "ifName": aliases["1." + wildalias], "activityindicator": activity_indicator] //create an item in the map for this instance, add the alias and description
-    } else {
-      output[wildalias] = ["alias":val ?: "NODESCR"] //create an item in the map for this instance, add the alias and description
-    }
+data.each { key, val -> //loop through the results looking for the wildvalues
+  if (!wildvalues.contains(key.tokenize(".")[-1])) {
+    wildvalues << key.tokenize(".")[-1]
   }
 }
-output.each {i_key, i_val -> //only search for properties for valid, discovered instances
-  props = [] //empty list to contain the properties
+wildvalues.each { //only search for properties for valid, discovered instances
+  //gather the properties with their corresponding enumerated string (if available)
+  props = []
   data.each {d_key, d_val -> //inspect each row in the data to see if it's for this instance
     oidstem = d_key.tokenize(".")[0]//strip the last element off the OID
-    if (d_key.tokenize(".").tail().join(".") == i_key && propstoget.containsKey(oidstem)) { //if it's for this instance
+    if (d_key.tokenize(".").tail().join(".") == it && propstoget.containsKey(oidstem)) { //if it's for this instance
       props += "${propstoget[oidstem][0]}=${propstoget[oidstem][1][d_val] ?: URLEncoder.encode(d_val)}" //add it to the properties (replace with enumeration if possible)
     }
   }
-  if(enhanceInterfaceData){
-    println("${i_key}##${i_val['ifName']}##${i_val['alias'] ?: i_val['description']} (${i_key})####description=${i_val['description']}&ifalias=${i_val['alias']}&ifname=${i_val['ifName']}&activityindicator=${i_val['activityindicator']}&" + props.join('&'))
-  } else {
-    println("${i_key}##${i_key}##${i_val['alias']}####" + props.join('&'))
-  }
+  wildvalue = it
+  wildalias = data[aliasOID + "." + it].trim()
+  description = (data[descrOID + "." + it] ?: "").trim()
+  propsOut = props.join("&")
+  println("${wildvalue}##${wildalias}##${description}####${propsOut}")
 }
 return(0)
