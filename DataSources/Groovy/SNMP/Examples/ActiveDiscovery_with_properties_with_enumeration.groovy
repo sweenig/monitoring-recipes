@@ -106,7 +106,7 @@ wildvalues.each { //only search for properties for valid, discovered instances
   }
   wildvalue = it
   wildalias = data[aliasOID + "." + it].trim()
-  description = (data[descrOID + "." + it] ?: "").trim()
+  description = (data[descrOID + "." + it] ?: "").trim() //append other values here in the form of `data["7" + "." + it]` where 7 is the oid containing another part of the description
   propsOut = props.join("&")
   println("${wildvalue}##${wildalias}##${description}####${propsOut}")
 }
